@@ -18,7 +18,6 @@ permissions:
 
 jobs:
   plan:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +60,7 @@ jobs:
         run: tofu -chdir=tofu plan -out=tfplan
 
   apply:
-    if: ${{ false && github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true' }}
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true'
     needs: [plan]
     runs-on: ubuntu-latest
     steps:
