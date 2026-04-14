@@ -1,0 +1,99 @@
+name: OpenTofu Infrastructure
+
+on:
+  pull_request:
+    paths:
+      - "tofu/**"
+      - ".github/workflows/tofu.yml"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply changes"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.8
+
+      - name: Tofu fmt
+        run: tofu -chdir=tofu fmt -check
+
+      - name: Tofu init
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        run: |
+          if [ -n "$TF_STATE_BUCKET" ]; then
+            tofu -chdir=tofu init -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="prefix=awx-gke"
+          else
+            tofu -chdir=tofu init -backend=false
+          fi
+
+      - name: Tofu validate
+        run: tofu -chdir=tofu validate
+
+      - name: Tofu plan
+        env:
+          TF_VAR_bootstrap_project_id: ${{ secrets.TF_VAR_bootstrap_project_id }}
+          TF_VAR_billing_account: ${{ secrets.TF_VAR_billing_account }}
+          TF_VAR_org_id: ${{ secrets.TF_VAR_org_id }}
+          TF_VAR_folder_id: ${{ secrets.TF_VAR_folder_id }}
+        run: tofu -chdir=tofu plan -out=tfplan
+
+  apply:
+    if: ${{ false && github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true' }}
+    needs: [plan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.8
+
+      - name: Tofu init
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        run: |
+          if [ -n "$TF_STATE_BUCKET" ]; then
+            tofu -chdir=tofu init -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="prefix=awx-gke"
+          else
+            tofu -chdir=tofu init -backend=false
+          fi
+
+      - name: Tofu apply
+        env:
+          TF_VAR_bootstrap_project_id: ${{ secrets.TF_VAR_bootstrap_project_id }}
+          TF_VAR_billing_account: ${{ secrets.TF_VAR_billing_account }}
+          TF_VAR_org_id: ${{ secrets.TF_VAR_org_id }}
+          TF_VAR_folder_id: ${{ secrets.TF_VAR_folder_id }}
+        run: tofu -chdir=tofu apply -auto-approve

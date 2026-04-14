@@ -1,0 +1,95 @@
+name: Deploy AWX via Ansible
+
+on:
+  workflow_dispatch:
+    inputs:
+      awx_hostname:
+        description: "DNS hostname for AWX (e.g. awx.example.com)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.8
+
+      - name: Init OpenTofu
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        run: |
+          if [ -z "$TF_STATE_BUCKET" ]; then
+            echo "TF_STATE_BUCKET secret is required for shared state access."
+            exit 1
+          fi
+          tofu -chdir=tofu init -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="prefix=awx-gke"
+
+      - name: Read infrastructure outputs
+        id: tfout
+        run: |
+          echo "project_id=$(tofu -chdir=tofu output -raw project_id)" >> "$GITHUB_OUTPUT"
+          echo "region=$(tofu -chdir=tofu output -raw region)" >> "$GITHUB_OUTPUT"
+          echo "cluster=$(tofu -chdir=tofu output -raw gke_cluster_name)" >> "$GITHUB_OUTPUT"
+          echo "sql_host=$(tofu -chdir=tofu output -raw cloud_sql_private_ip)" >> "$GITHUB_OUTPUT"
+          echo "sql_db=$(tofu -chdir=tofu output -raw cloud_sql_database)" >> "$GITHUB_OUTPUT"
+          echo "sql_user=$(tofu -chdir=tofu output -raw cloud_sql_user)" >> "$GITHUB_OUTPUT"
+          echo "sql_secret=$(tofu -chdir=tofu output -raw postgres_password_secret_id)" >> "$GITHUB_OUTPUT"
+          echo "awx_admin_secret=$(tofu -chdir=tofu output -raw awx_admin_password_secret_id)" >> "$GITHUB_OUTPUT"
+          echo "ingress_ip_name=$(tofu -chdir=tofu output -raw ingress_ip_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure kubectl
+        run: |
+          gcloud config set project "${{ steps.tfout.outputs.project_id }}"
+          gcloud container clusters get-credentials "${{ steps.tfout.outputs.cluster }}" \
+            --region "${{ steps.tfout.outputs.region }}" \
+            --project "${{ steps.tfout.outputs.project_id }}"
+
+      - name: Read runtime secrets
+        id: secrets
+        run: |
+          echo "postgres_password=$(gcloud secrets versions access latest --secret=${{ steps.tfout.outputs.sql_secret }} --project=${{ steps.tfout.outputs.project_id }})" >> "$GITHUB_OUTPUT"
+          echo "awx_admin_password=$(gcloud secrets versions access latest --secret=${{ steps.tfout.outputs.awx_admin_secret }} --project=${{ steps.tfout.outputs.project_id }})" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core kubernetes openshift
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Deploy AWX
+        run: |
+          ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/deploy_awx.yml \
+            -e awx_hostname="${{ inputs.awx_hostname }}" \
+            -e postgres_host="${{ steps.tfout.outputs.sql_host }}" \
+            -e postgres_db="${{ steps.tfout.outputs.sql_db }}" \
+            -e postgres_user="${{ steps.tfout.outputs.sql_user }}" \
+            -e postgres_password="${{ steps.secrets.outputs.postgres_password }}" \
+            -e awx_admin_password="${{ steps.secrets.outputs.awx_admin_password }}" \
+            -e gke_ingress_static_ip_name="${{ steps.tfout.outputs.ingress_ip_name }}"

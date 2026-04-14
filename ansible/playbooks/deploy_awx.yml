@@ -1,0 +1,85 @@
+---
+- name: Deploy AWX on GKE
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Validate required inputs
+      ansible.builtin.assert:
+        that:
+          - awx_hostname | length > 0
+          - postgres_host | length > 0
+          - postgres_password | length > 0
+          - awx_admin_password | length > 0
+          - gke_ingress_static_ip_name | length > 0
+        fail_msg: "Missing required variable(s)."
+
+    - name: Ensure AWX namespace exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ awx_namespace }}"
+
+    - name: Install/upgrade AWX operator
+      ansible.builtin.command:
+        cmd: >-
+          kubectl apply -k github.com/ansible/awx-operator/config/default?ref={{ awx_operator_version }}
+      register: operator_apply
+      changed_when: "'configured' in operator_apply.stdout or 'created' in operator_apply.stdout"
+
+    - name: Create AWX PostgreSQL secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: awx-postgres-configuration
+            namespace: "{{ awx_namespace }}"
+          type: Opaque
+          stringData:
+            host: "{{ postgres_host }}"
+            port: "{{ postgres_port | string }}"
+            database: "{{ postgres_db }}"
+            username: "{{ postgres_user }}"
+            password: "{{ postgres_password }}"
+            sslmode: require
+            type: unmanaged
+
+    - name: Create AWX admin password secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: awx-admin-password
+            namespace: "{{ awx_namespace }}"
+          type: Opaque
+          stringData:
+            password: "{{ awx_admin_password }}"
+
+    - name: Apply AWX custom resource
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('template', '../templates/awx-cr.yaml.j2') | from_yaml }}"
+
+    - name: Wait for AWX web deployment
+      ansible.builtin.command:
+        cmd: kubectl -n {{ awx_namespace }} rollout status deployment/{{ awx_name }}-web --timeout=20m
+      register: awx_rollout
+      changed_when: false
+
+    - name: Create managed cert + ingress
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('template', '../templates/ingress.yaml.j2') | from_yaml_all | list }}"
+
+    - name: Show ingress endpoint hint
+      ansible.builtin.debug:
+        msg:
+          - "AWX deployment submitted successfully."
+          - "Point DNS for {{ awx_hostname }} to the static IP from OpenTofu output."

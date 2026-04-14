@@ -1,0 +1,14 @@
+---
+awx_namespace: awx
+awx_name: awx
+awx_operator_version: 2.19.1
+
+postgres_host: ""
+postgres_port: 5432
+postgres_db: awx
+postgres_user: awx
+postgres_password: ""
+
+awx_admin_password: ""
+awx_hostname: ""
+gke_ingress_static_ip_name: awx-ingress-ip
