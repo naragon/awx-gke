@@ -2,7 +2,7 @@
 
 This repository provisions and deploys:
 
-- **GCP project**: `sandragon-awx`
+- **GCP project**: `sandragon-awx` (existing by default, or created optionally)
 - **Network**: dedicated VPC/subnets, private GKE nodes, Cloud NAT
 - **GKE**: Standard regional cluster (`us-central1`), node pool `e2-standard-4` (autoscaling 1-3)
 - **Database**: Cloud SQL PostgreSQL (private IP)
@@ -20,7 +20,7 @@ This repository provisions and deploys:
 ## Prerequisites
 
 1. A **bootstrap GCP project** where your GitHub OIDC service account exists.
-2. Billing/org details for project creation:
+2. If creating project in OpenTofu (`create_project=true`), billing/org details:
    - `billing_account`
    - one of `org_id` or `folder_id`
 3. GitHub OIDC configured with:
@@ -35,8 +35,9 @@ Set these in your repository settings:
 - `GCP_WORKLOAD_IDENTITY_PROVIDER`
 - `GCP_SERVICE_ACCOUNT`
 - `TF_VAR_bootstrap_project_id`
-- `TF_VAR_billing_account`
-- `TF_VAR_org_id` **or** `TF_VAR_folder_id`
+- `TF_VAR_create_project` (`false` by default)
+- `TF_VAR_billing_account` (only if creating project)
+- `TF_VAR_org_id` **or** `TF_VAR_folder_id` (only if creating project)
 - `TF_STATE_BUCKET` (recommended for shared remote state)
 
 Optional overrides:

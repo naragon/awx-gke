@@ -1,4 +1,5 @@
 resource "google_project" "awx" {
+  count           = var.create_project ? 1 : 0
   name            = var.project_name
   project_id      = var.project_id
   billing_account = var.billing_account
@@ -7,8 +8,12 @@ resource "google_project" "awx" {
 
   lifecycle {
     precondition {
+      condition     = var.billing_account != ""
+      error_message = "billing_account is required when create_project=true."
+    }
+    precondition {
       condition     = (var.org_id != "" && var.folder_id == "") || (var.org_id == "" && var.folder_id != "")
-      error_message = "Exactly one of org_id or folder_id must be provided."
+      error_message = "Exactly one of org_id or folder_id must be provided when create_project=true."
     }
   }
 }

@@ -3,21 +3,28 @@ variable "bootstrap_project_id" {
   type        = string
 }
 
+variable "create_project" {
+  description = "Whether to create project_id in this stack"
+  type        = bool
+  default     = false
+}
+
 variable "project_id" {
-  description = "Target project ID to create"
+  description = "Target GCP project ID (created or existing)"
   type        = string
   default     = "sandragon-awx"
 }
 
 variable "project_name" {
-  description = "Target project display name"
+  description = "Target project display name (used only if create_project=true)"
   type        = string
   default     = "sandragon-awx"
 }
 
 variable "billing_account" {
-  description = "Billing account ID (format: 000000-000000-000000)"
+  description = "Billing account ID (required only if create_project=true)"
   type        = string
+  default     = ""
 }
 
 variable "org_id" {

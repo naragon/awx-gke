@@ -1,10 +1,12 @@
 bootstrap_project_id = "your-bootstrap-project-id"
-billing_account      = "000000-000000-000000"
 
-# Set exactly one
-org_id    = "123456789012"
-# folder_id = "123456789012"
+# Use existing project (recommended for now)
+create_project = false
+project_id     = "sandragon-awx"
+region         = "us-central1"
 
-project_id   = "sandragon-awx"
-project_name = "sandragon-awx"
-region       = "us-central1"
+# Required only when create_project=true
+# billing_account = "000000-000000-000000"
+# org_id          = "123456789012"
+# folder_id       = "123456789012"
+# project_name    = "sandragon-awx"
